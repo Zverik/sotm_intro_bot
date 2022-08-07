@@ -40,6 +40,7 @@ async def get_db():
         q = '''\
         create virtual table intro_search using fts3(name, tokenize=unicode61);
         '''
+        await _db.execute(q)
         await _db.commit()
     return _db
 
@@ -68,7 +69,7 @@ async def find_by_video(video_id: str) -> User:
 async def create_user(user: types.User, name: str):
     db = await get_db()
     await db.execute('insert into intros (user_id, name) values (?, ?)', (user.id, name))
-    await db.execute('insert into intro_search (user_id, name) values (?, ?)', (user.id, name))
+    await db.execute('insert into intro_search (docid, name) values (?, ?)', (user.id, name))
     await db.commit()
 
 
@@ -114,6 +115,7 @@ async def find_by_name(keywords: str) -> list[User]:
     db = await get_db()
     cursor = await db.execute(
         "select user_id, name, video_id, can_contact from intros "
-        "where user_id in (select docid from intro_search where intro_search match ?)",
+        "where user_id in (select docid from intro_search where intro_search match ?) "
+        "and video_id is not null",
         (keywords,))
     return [User(row) async for row in cursor]

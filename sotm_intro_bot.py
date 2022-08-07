@@ -19,26 +19,34 @@ async def welcome(message: types.Message):
     )
 
 
-async def present_user(user: db.User):
-    if user.can_contact:
+async def present_user(me: types.User, user: db.User):
+    if user.can_contact and me.id != user.user_id:
         caption = (f'This is {user.name}. If you want to say hi, reply to this message '
                    'and I will forward your reply to them. Or press /random for '
                    'another participant.')
     else:
         caption = f'{user.name}.\nPress /random for another participant.'
-    bot.send_video(user.video_id, caption=caption)
+    await bot.send_video(me.id, user.video_id, caption=caption)
+
+
+@dp.message_handler(commands=['me'])
+async def show_myself(message: types.Message):
+    user = await db.find_user(message.from_user)
+    if not user:
+        return await msg(message)
+    await present_user(message.from_user, user)
 
 
 @dp.message_handler(commands=['random'])
 async def random(message: types.Message):
     user = await db.find_user(message.from_user)
-    if user is not None:
+    if not user:
         return await msg(message)
     rnd = await db.random_user(message.from_user)
     if not rnd:
-        await message.answer('Sorry, could not find anyone')
+        await message.answer('Sorry, there is nobody else.')
         return
-    await present_user(rnd)
+    await present_user(message.from_user, rnd)
 
 
 @dp.message_handler(commands=['name'])
@@ -51,6 +59,14 @@ async def change_contact(message: types.Message):
     await message.reply(
         'Do you want other people contacting you (via this bot)?',
         reply_markup=make_yesno_keyboard())
+
+
+@dp.callback_query_handler(USER_CB.filter())
+async def show_single_user(query: types.CallbackQuery, callback_data: dict[str, str]):
+    another = await db.find_user(callback_data['id'])
+    if not another:
+        query.answer('Could not find user')
+    await present_user(query.from_user, another)
 
 
 @dp.message_handler(commands=['delete'])
@@ -96,9 +112,10 @@ async def set_contact_yes(query: types.CallbackQuery):
     await db.set_contact(query.from_user, query.data == 'contact_yes')
     if user.video_id is not None:
         await query.answer('Saved.')
-        await send_invite()
+        await send_invite(query.from_user)
         return
-    await query.answer(
+    await bot.send_message(
+        query.from_user.id,
         'Great! Now please record a video 10-15 seconds in length.\n\n'
         'In it say hi, tell your name and where are you from, '
         'and what do you like to do in OpenStreetMap.'
@@ -116,13 +133,13 @@ async def msg(message: types.Message):
     if not user:
         if len(message.text.strip().split()) >= 2:
             # There was no name but there is now
-            await db.create_user(message.chat.id, message.text.strip())
-            await message.reply(
+            await db.create_user(message.from_user, message.text.strip())
+            await message.answer(
                 'Thank you! When you want to change it, type /name. '
                 'Now, do you want other people contacting you (via this bot)?',
                 reply_markup=make_yesno_keyboard())
             return
-        await message.answer('Please write your full name.')
+        await message.answer('Please write your full name, at least two words.')
         return
 
     if not user.can_contact_entered:
@@ -144,9 +161,9 @@ async def msg(message: types.Message):
 
     found = await db.find_by_name(message.text.strip())
     if not found:
-        await message.reply('Sorry, could not find anyone with that name.')
+        await message.reply('Sorry, could not find anyone with that name. Try /random.')
     elif len(found) == 1:
-        await present_user(found[0])
+        await present_user(message.from_user, found[0])
     else:
         kbd = types.InlineKeyboardMarkup(row_width=1)
         for fu in found:
@@ -179,12 +196,17 @@ async def update_video(message: types.Message):
             'Thank you for the video! Now people can find it and get aquainted with you.')
     else:
         await message.answer('Thank you for the new video!')
-    await send_invite()
+    await send_invite(message.from_user)
 
 
 @dp.message_handler(content_types=types.ContentType.VIDEO_NOTE)
 async def video_note(message: types.Message):
     await message.reply('Please send (or attach) a proper video, not a video note.')
+
+
+@dp.message_handler(content_types=types.ContentType.ANIMATION)
+async def animation_note(message: types.Message):
+    await message.reply('Please record a video with sound.')
 
 
 if __name__ == '__main__':
