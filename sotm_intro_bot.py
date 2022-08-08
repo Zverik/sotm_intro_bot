@@ -148,17 +148,23 @@ async def msg(message: types.Message):
             reply_markup=make_yesno_keyboard())
         return
 
-    if message.reply_to_message and message.reply_to_message.video:
-        reply_user = await db.find_by_video(message.reply_to_message.video.file_id)
-        if not reply_user:
-            await message.answer('Sorry, could not find the user to forward your reply to.')
-        elif not reply_user.can_contact:
-            await message.answer('Sorry, the user asked not to contact them.')
-        else:
-            await message.forward(reply_user.user_id)
-            await message.answer('Forwarded them your message.')
+    if message.reply_to_message:
+        if message.reply_to_message.video:
+            # When replying to video, find the user with the video and forward them the reply.
+            reply_user = await db.find_by_video(message.reply_to_message.video.file_id)
+            if not reply_user:
+                await message.answer('Sorry, could not find the user to forward your reply to.')
+            elif not reply_user.can_contact:
+                await message.answer('Sorry, the user asked not to contact them.')
+            else:
+                await message.forward(reply_user.user_id)
+                await message.answer('Forwarded them your message.')
+        elif message.reply_to_message.forward_from:
+            # Forward the reply back.
+            await message.forward(message.reply_to_message.forward_from.id)
         return
 
+    # Search for the user by name.
     found = await db.find_by_name(message.text.strip())
     if not found:
         await message.reply('Sorry, could not find anyone with that name. Try /random.')
