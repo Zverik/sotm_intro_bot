@@ -135,3 +135,10 @@ async def find_by_name(keywords: str) -> list[User]:
         "and is_blocked != 1 and video_id is not null",
         (keywords,))
     return [User(row) async for row in cursor]
+
+
+async def block_user(user: types.User, value: bool = True):
+    db = await get_db()
+    await db.execute(
+        'update intros set is_blocked = ? where user_id = ?', (1 if value else 0, user.id))
+    await db.commit()

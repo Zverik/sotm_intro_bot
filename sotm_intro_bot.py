@@ -136,6 +136,11 @@ async def set_contact_yes(query: types.CallbackQuery):
 
 @dp.callback_query_handler(text='report')
 async def report_message(query: types.CallbackQuery):
+    if query.from_user == config.ADMIN_ID:
+        # If the admin, block the user.
+        # TODO
+        await query.answer('Sorry, not implemented')
+        return
     # Just forward the message to the admin
     await query.message.forward(config.ADMIN_ID)
     await query.message.delete_reply_markup()
