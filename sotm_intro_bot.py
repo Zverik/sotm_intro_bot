@@ -26,14 +26,17 @@ async def present_user(me: types.User, user: db.User):
                    'another participant.')
     else:
         caption = f'{user.name}.\nPress /random for another participant.'
-    await bot.send_video(me.id, user.video_id, caption=caption)
+    await bot.send_video(
+        me.id, user.video_id, caption=caption,
+        reply_markup=make_report_keyboard(me.id, user.user_id)
+    )
 
 
 @dp.message_handler(commands=['me'])
 async def show_myself(message: types.Message):
     user = await db.find_user(message.from_user)
     if not user:
-        return await msg(message)
+        return await not_a_user(message)
     await present_user(message.from_user, user)
 
 
@@ -41,7 +44,7 @@ async def show_myself(message: types.Message):
 async def random(message: types.Message):
     user = await db.find_user(message.from_user)
     if not user:
-        return await msg(message)
+        return await not_a_user(message)
     rnd = await db.random_user(message.from_user)
     if not rnd:
         await message.answer('Sorry, there is nobody else.')
@@ -51,6 +54,7 @@ async def random(message: types.Message):
 
 @dp.message_handler(commands=['name'])
 async def change_name(message: types.Message):
+    # TODO
     await message.answer('Sorry, cannot change names yet.')
 
 
@@ -102,6 +106,14 @@ def make_yesno_keyboard():
     return kbd
 
 
+def make_report_keyboard(u1: int = 0, u2: int = 1):
+    if u1 == u2:
+        return None
+    kbd = types.InlineKeyboardMarkup()
+    kbd.add(types.InlineKeyboardButton('Report', callback_data='report'))
+    return kbd
+
+
 @dp.callback_query_handler(text='contact_yes')
 @dp.callback_query_handler(text='contact_no')
 async def set_contact_yes(query: types.CallbackQuery):
@@ -122,6 +134,18 @@ async def set_contact_yes(query: types.CallbackQuery):
     )
 
 
+@dp.callback_query_handler(text='report')
+async def report_message(query: types.CallbackQuery):
+    # Just forward the message to the admin
+    await query.message.forward(config.ADMIN_ID)
+    await query.message.delete_reply_markup()
+    await query.answer('Message reported')
+
+
+async def not_a_user(message: types.Message):
+    await message.answer('Please write your full name, at least two words.')
+
+
 @dp.message_handler()
 async def msg(message: types.Message):
     if message.from_user.is_bot:
@@ -139,7 +163,7 @@ async def msg(message: types.Message):
                 'Now, do you want other people contacting you (via this bot)?',
                 reply_markup=make_yesno_keyboard())
             return
-        await message.answer('Please write your full name, at least two words.')
+        await not_a_user(message)
         return
 
     if not user.can_contact_entered:
@@ -149,6 +173,9 @@ async def msg(message: types.Message):
         return
 
     if message.reply_to_message:
+        if user.is_blocked:
+            await message.answer('Sorry, you are blocked.')
+            return
         if message.reply_to_message.video:
             # When replying to video, find the user with the video and forward them the reply.
             reply_user = await db.find_by_video(message.reply_to_message.video.file_id)
@@ -166,6 +193,7 @@ async def msg(message: types.Message):
 
     # Search for the user by name.
     found = await db.find_by_name(message.text.strip())
+    found = [u for u in found if u.user_id != message.from_user.id]
     if not found:
         await message.reply('Sorry, could not find anyone with that name. Try /random.')
     elif len(found) == 1:
@@ -187,7 +215,7 @@ async def send_invite(user: types.User):
 async def update_video(message: types.Message):
     user = await db.find_user(message.from_user)
     if not user:
-        return await msg(message)
+        return await not_a_user(message)
 
     if message.video.duration < 7:
         await message.reply('Please record another one, around 10-15 seconds long.')
@@ -207,11 +235,19 @@ async def update_video(message: types.Message):
 
 @dp.message_handler(content_types=types.ContentType.VIDEO_NOTE)
 async def video_note(message: types.Message):
+    user = await db.find_user(message.from_user)
+    if not user:
+        return await not_a_user(message)
     await message.reply('Please send (or attach) a proper video, not a video note.')
 
 
+@dp.message_handler(content_types=types.ContentType.PHOTO)
+@dp.message_handler(content_types=types.ContentType.AUDIO)
 @dp.message_handler(content_types=types.ContentType.ANIMATION)
 async def animation_note(message: types.Message):
+    user = await db.find_user(message.from_user)
+    if not user:
+        return await not_a_user(message)
     await message.reply('Please record a video with sound.')
 
 
