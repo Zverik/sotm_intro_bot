@@ -39,6 +39,7 @@ async def get_db():
             vis_id integer not null,
             name text not null,
             video_id text,
+            video_unique_id text,
             can_contact integer,
             is_blocked integer default 0,
             added_on timestamp not null default current_timestamp
@@ -65,11 +66,20 @@ async def find_user(user: types.User) -> User:
     return None if not row else User(row)
 
 
+async def find_by_vis_id(vis_id: int) -> User:
+    db = await get_db()
+    cursor = await db.execute(
+        f'select {User.fields} from intros where vis_id = ?', (vis_id,))
+    row = await cursor.fetchone()
+    return None if not row else User(row)
+
+
 async def find_by_video(video_id: str) -> User:
     db = await get_db()
     cursor = await db.execute(
-        f'select {User.fields} from intros where video_id = ?', (video_id,))
+        f'select {User.fields} from intros where video_unique_id = ?', (video_id,))
     row = await cursor.fetchone()
+    print(f'find_by_video: {row}')
     return None if not row else User(row)
 
 
@@ -120,10 +130,11 @@ async def set_contact(user: types.User, value: bool):
     await db.commit()
 
 
-async def set_video(user: types.User, video_id: str):
+async def set_video(user: types.User, video_id: str, video_unique_id: str):
     db = await get_db()
     await db.execute(
-        'update intros set video_id = ? where user_id = ?', (video_id, user.id))
+        'update intros set video_id = ?, video_unique_id = ? where user_id = ?',
+        (video_id, video_unique_id, user.id))
     await db.commit()
 
 
@@ -137,8 +148,8 @@ async def find_by_name(keywords: str) -> list[User]:
     return [User(row) async for row in cursor]
 
 
-async def block_user(user: types.User, value: bool = True):
+async def block_user(user_id: int, value: bool = True):
     db = await get_db()
     await db.execute(
-        'update intros set is_blocked = ? where user_id = ?', (1 if value else 0, user.id))
+        'update intros set is_blocked = ? where user_id = ?', (1 if value else 0, user_id))
     await db.commit()

@@ -1,5 +1,7 @@
 import config
 import db
+import re
+from typing import Optional
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.utils.callback_data import CallbackData
 
@@ -21,7 +23,7 @@ async def welcome(message: types.Message):
 
 async def present_user(me: types.User, user: db.User):
     if user.can_contact and me.id != user.user_id:
-        caption = (f'This is {user.name}. If you want to say hi, reply to this message '
+        caption = (f'This is {user.name}.\nIf you want to say hi, reply to this message '
                    'and I will forward your reply to them. Or press /random for '
                    'another participant.')
     else:
@@ -54,8 +56,8 @@ async def random(message: types.Message):
 
 @dp.message_handler(commands=['name'])
 async def change_name(message: types.Message):
-    # TODO
-    await message.answer('Sorry, cannot change names yet.')
+    await message.answer(
+        'Please send a message with "/name First Second". Sorry for inconvenience!')
 
 
 @dp.message_handler(commands=['contact'])
@@ -109,8 +111,9 @@ def make_yesno_keyboard():
 def make_report_keyboard(u1: int = 0, u2: int = 1):
     if u1 == u2:
         return None
+    label = 'Block' if u1 == config.ADMIN_ID else 'Report'
     kbd = types.InlineKeyboardMarkup()
-    kbd.add(types.InlineKeyboardButton('Report', callback_data='report'))
+    kbd.add(types.InlineKeyboardButton(label, callback_data='report'))
     return kbd
 
 
@@ -136,19 +139,41 @@ async def set_contact_yes(query: types.CallbackQuery):
 
 @dp.callback_query_handler(text='report')
 async def report_message(query: types.CallbackQuery):
-    if query.from_user == config.ADMIN_ID:
+    if query.from_user.id == config.ADMIN_ID:
         # If the admin, block the user.
-        # TODO
-        await query.answer('Sorry, not implemented')
-        return
-    # Just forward the message to the admin
-    await query.message.forward(config.ADMIN_ID)
-    await query.message.delete_reply_markup()
-    await query.answer('Message reported')
+        ref_user = await find_referenced_user(query.message)
+        if ref_user:
+            await db.block_user(ref_user)
+            await query.answer('Blocked!')
+        else:
+            await query.answer('Could not find user')
+    else:
+        # Just forward the message to the admin
+        if query.message.video:
+            await bot.send_message(config.ADMIN_ID, 'Reported:')
+            await query.message.forward(config.ADMIN_ID)
+        else:
+            await bot.send_message(
+                config.ADMIN_ID, f'Reported: {query.message.text}',
+                reply_markup=make_report_keyboard(config.ADMIN_ID),
+            )
+        await query.message.delete_reply_markup()
+        await query.answer('Message reported')
 
 
 async def not_a_user(message: types.Message):
     await message.answer('Please write your full name, at least two words.')
+
+
+async def find_referenced_user(message: types.Message) -> Optional[db.User]:
+    if message.video:
+        # When replying to video, find the user with the video and forward them the reply.
+        return await db.find_by_video(message.video.file_unique_id)
+    else:
+        m = re.search(r' \[(\d+)\]:', message.text)
+        if m:
+            return await db.find_by_vis_id(int(m.group(1)))
+    return None
 
 
 @dp.message_handler()
@@ -177,27 +202,38 @@ async def msg(message: types.Message):
             reply_markup=make_yesno_keyboard())
         return
 
+    if message.text.strip().startswith('/name '):
+        new_name = message.text.strip().split(maxsplit=1)[1]
+        if len(new_name.split()) >= 2:
+            await db.update_name(message.from_user, new_name)
+            await message.answer(f'Thanks, your name was updated to {new_name}.')
+        else:
+            await message.reply('Please use your full name (two words).')
+        return
+
     if message.reply_to_message:
         if user.is_blocked:
             await message.answer('Sorry, you are blocked.')
             return
-        if message.reply_to_message.video:
-            # When replying to video, find the user with the video and forward them the reply.
-            reply_user = await db.find_by_video(message.reply_to_message.video.file_id)
-            if not reply_user:
-                await message.answer('Sorry, could not find the user to forward your reply to.')
-            elif not reply_user.can_contact:
-                await message.answer('Sorry, the user asked not to contact them.')
-            else:
-                await message.forward(reply_user.user_id)
+        reply_user = await find_referenced_user(message.reply_to_message)
+        is_video = message.reply_to_message.video
+        if not reply_user:
+            await message.answer('Sorry, could not find the user to forward your reply to.')
+        elif not reply_user.can_contact and is_video:
+            await message.answer('Sorry, the user asked not to contact them.')
+        else:
+            await bot.send_message(
+                reply_user.user_id, f'{user.name} [{user.vis_id}]: {message.text}',
+                reply_markup=make_report_keyboard(),
+            )
+            if is_video:
                 await message.answer('Forwarded them your message.')
-        elif message.reply_to_message.forward_from:
-            # Forward the reply back.
-            await message.forward(message.reply_to_message.forward_from.id)
         return
 
     # Search for the user by name.
     found = await db.find_by_name(message.text.strip())
+    if not found:
+        found = await db.find_by_name(message.text.strip() + '*')
     found = [u for u in found if u.user_id != message.from_user.id]
     if not found:
         await message.reply('Sorry, could not find anyone with that name. Try /random.')
@@ -229,7 +265,7 @@ async def update_video(message: types.Message):
         await message.reply('Please record another one, at most 20 seconds long.')
         return
 
-    await db.set_video(message.from_user, message.video.file_id)
+    await db.set_video(message.from_user, message.video.file_id, message.video.file_unique_id)
     if not user.video_id:
         await message.answer(
             'Thank you for the video! Now people can find it and get aquainted with you.')
