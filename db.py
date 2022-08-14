@@ -79,7 +79,6 @@ async def find_by_video(video_id: str) -> User:
     cursor = await db.execute(
         f'select {User.fields} from intros where video_unique_id = ?', (video_id,))
     row = await cursor.fetchone()
-    print(f'find_by_video: {row}')
     return None if not row else User(row)
 
 
@@ -118,7 +117,8 @@ async def random_user(user: types.User):
     db = await get_db()
     cursor = await db.execute(
         f'select {User.fields} from intros '
-        'where user_id != ? and video_id is not null order by random() limit 1', (user.id,))
+        'where user_id != ? and video_id is not null and is_blocked != 1 '
+        'order by random() limit 1', (user.id,))
     row = await cursor.fetchone()
     return None if not row else User(row)
 

@@ -143,7 +143,7 @@ async def report_message(query: types.CallbackQuery):
         # If the admin, block the user.
         ref_user = await find_referenced_user(query.message)
         if ref_user:
-            await db.block_user(ref_user)
+            await db.block_user(ref_user.user_id)
             await query.answer('Blocked!')
         else:
             await query.answer('Could not find user')
