@@ -133,7 +133,9 @@ async def set_contact_yes(query: types.CallbackQuery):
         query.from_user.id,
         'Great! Now please record a video 10-15 seconds in length.\n\n'
         'In it say hi, tell your name and where are you from, '
-        'and what do you like to do in OpenStreetMap.'
+        'and what do you like to do in OpenStreetMap. Basically, '
+        'name one-two topics you\'d like talking about. Like your '
+        'community, things you\'ve mapped, or tools you use.'
     )
 
 
@@ -268,8 +270,8 @@ async def update_video(message: types.Message):
     await db.set_video(message.from_user, message.video.file_id, message.video.file_unique_id)
     if not user.video_id:
         await message.answer(
-            'Thank you for the video! Now people can find it and get acquainted with you.\n\n'
-            'Try /random to see other people introduce themselves.')
+            'Thank you for the video! Now people can find it and get acquainted with you.\n'
+            'You can upload a new one at any time if you want.')
     else:
         await message.answer('Thank you for the new video!')
     await send_invite(message.from_user)
