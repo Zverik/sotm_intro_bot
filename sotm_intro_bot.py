@@ -54,12 +54,6 @@ async def random(message: types.Message):
     await present_user(message.from_user, rnd)
 
 
-@dp.message_handler(commands=['name'])
-async def change_name(message: types.Message):
-    await message.answer(
-        'Please send a message with "/name First Second". Sorry for inconvenience!')
-
-
 @dp.message_handler(commands=['contact'])
 async def change_contact(message: types.Message):
     await message.reply(
@@ -182,14 +176,15 @@ async def find_referenced_user(message: types.Message) -> Optional[db.User]:
 async def msg(message: types.Message):
     if message.from_user.is_bot:
         return
-    if len(message.text.strip()) < 2:
+    text = message.text.strip()
+    if len(text) < 2:
         return
 
     user = await db.find_user(message.from_user)
     if not user:
-        if len(message.text.strip().split()) >= 2:
+        if len(text.split()) >= 2:
             # There was no name but there is now
-            await db.create_user(message.from_user, message.text.strip())
+            await db.create_user(message.from_user, text)
             await message.answer(
                 'Thank you! When you want to change it, type /name. '
                 'Now, do you want other people contacting you (via this bot)?',
@@ -204,10 +199,13 @@ async def msg(message: types.Message):
             reply_markup=make_yesno_keyboard())
         return
 
-    if message.text.strip().startswith('/name '):
-        new_name = message.text.strip().split(maxsplit=1)[1]
-        if len(new_name.split()) >= 2:
-            await db.update_name(message.from_user, new_name)
+    if text.startswith('/name'):
+        new_name = text.split(maxsplit=1)
+        if len(new_name) <= 1:
+            await message.answer(
+                'Please send a message with "/name First Second". Sorry for inconvenience!')
+        elif len(new_name[1].split()) >= 2:
+            await db.update_name(message.from_user, new_name[1])
             await message.answer(f'Thanks, your name was updated to {new_name}.')
         else:
             await message.reply('Please use your full name (two words).')
@@ -225,7 +223,7 @@ async def msg(message: types.Message):
             await message.answer('Sorry, the user asked not to contact them.')
         else:
             await bot.send_message(
-                reply_user.user_id, f'{user.name} [{user.vis_id}]: {message.text}',
+                reply_user.user_id, f'{user.name} [{user.vis_id}]: {text}',
                 reply_markup=make_report_keyboard(),
             )
             if is_video:
@@ -233,9 +231,9 @@ async def msg(message: types.Message):
         return
 
     # Search for the user by name.
-    found = await db.find_by_name(message.text.strip())
+    found = await db.find_by_name(text)
     if not found:
-        found = await db.find_by_name(message.text.strip() + '*')
+        found = await db.find_by_name(text + '*')
     found = [u for u in found if u.user_id != message.from_user.id]
     if not found:
         await message.reply('Sorry, could not find anyone with that name. Try /random.')
