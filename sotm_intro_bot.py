@@ -93,21 +93,33 @@ async def delete_answered(query: types.CallbackQuery):
     await bot.delete_message(query.from_user, query.message.message_id)
 
 
+@dp.callback_query_handler(text='video')
+async def show_video(query: types.CallbackQuery):
+    ref_user = await find_referenced_user(query.message)
+    if not ref_user:
+        await query.answer('Sorry, lost the user.')
+        return
+    await present_user(query.from_user, ref_user)
+
+
 def make_yesno_keyboard():
     kbd = types.InlineKeyboardMarkup(row_width=2)
     kbd.add(
-        types.InlineKeyboardButton('Yes', callback_data='contact_yes'),
-        types.InlineKeyboardButton('No', callback_data='contact_no'),
+        types.InlineKeyboardButton('✅ Yes', callback_data='contact_yes'),
+        types.InlineKeyboardButton('❌ No', callback_data='contact_no'),
     )
     return kbd
 
 
-def make_report_keyboard(u1: int = 0, u2: int = 1):
+def make_report_keyboard(u1: int = 0, u2: int = 1, add_info: bool = False):
     if u1 == u2:
         return None
-    label = 'Block' if u1 == config.ADMIN_ID else 'Report'
+    label = '⛔ Block' if u1 == config.ADMIN_ID else '⚠️ Report'
+    btns = [types.InlineKeyboardButton(label, callback_data='report')]
+    if add_info:
+        btns.append(types.InlineKeyboardButton('🎞️ Intro', callback_data='video'))
     kbd = types.InlineKeyboardMarkup()
-    kbd.add(types.InlineKeyboardButton(label, callback_data='report'))
+    kbd.row(*btns)
     return kbd
 
 
@@ -151,7 +163,7 @@ async def report_message(query: types.CallbackQuery):
         else:
             await bot.send_message(
                 config.ADMIN_ID, f'Reported: {query.message.text}',
-                reply_markup=make_report_keyboard(config.ADMIN_ID),
+                reply_markup=make_report_keyboard(config.ADMIN_ID, add_info=True),
             )
         await query.message.delete_reply_markup()
         await query.answer('Message reported')
@@ -206,7 +218,7 @@ async def msg(message: types.Message):
                 'Please send a message with "/name First Second". Sorry for inconvenience!')
         elif len(new_name[1].split()) >= 2:
             await db.update_name(message.from_user, new_name[1])
-            await message.answer(f'Thanks, your name was updated to {new_name}.')
+            await message.answer(f'Thanks, your name was updated to {new_name[1]}.')
         else:
             await message.reply('Please use your full name (two words).')
         return
@@ -224,7 +236,7 @@ async def msg(message: types.Message):
         else:
             await bot.send_message(
                 reply_user.user_id, f'{user.name} [{user.vis_id}]: {text}',
-                reply_markup=make_report_keyboard(),
+                reply_markup=make_report_keyboard(message.from_user.id, add_info=True),
             )
             if is_video:
                 await message.answer('Forwarded them your message.')
